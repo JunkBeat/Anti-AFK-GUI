@@ -1,0 +1,6 @@
+pywin32
+keyboard
+pynput
+PyQt5
+winotify
+pyqtconfig
