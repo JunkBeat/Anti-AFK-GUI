@@ -50,6 +50,9 @@ To reset AFK timers in maximized windows as well, activate the `Maximized window
 * If the activity triggers before the window is fully loaded, try increasing the `Activity delay`.
 * In the case of unexpected exceptions, input block is automatically disabled (if it was enabled in the settings). However, if for some reason this doesn't work, use the Control-Alt-Delete key combination to access the task manager and terminate the program from there.
 
+#  Executable download link
+:sparkles: [Latest Release](https://github.com/JunkBeat/Anti-AFK-GUI/releases/latest/) 
+
 # Bannable?
 Make sure that using macros is allowed in your game.
 
