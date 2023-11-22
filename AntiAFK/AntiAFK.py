@@ -16,6 +16,7 @@ from winotify import Notification
 from Widgets import Screensaver, CollapsibleBox, ListDialog
 from Utils import ExceptionHandler, Timer, SingleshotTimer, get_res, ICON_PATH
 from pyqtconfig import ConfigManager
+from functools import partial
 
 def _get_CollapsibleBox(self):
     return self.isChecked()
@@ -102,6 +103,7 @@ class AntiAFK(QObject):
 
     def perform_activity(self, handles):
         window = win32gui.GetForegroundWindow()
+        # Assign a value if the focus is not on the Anti-AFK program
         self.previous_hwnd = window if window != self.winid else None
 
         for handle in handles:
@@ -120,7 +122,11 @@ class AntiAFK(QObject):
         self.start_timer()
 
     def time_sleep(self, delay_sec: float, on_finished=None):
-        #Create delays without freezing gui
+        """
+        Create delays without freezing GUI
+        It's just like QTimer.singleShot but slot is optional
+        and it will wait for the timer to complete before continuing
+        """
         delay = round(delay_sec * 1000)
         self.singleshot_timer = SingleshotTimer()
 
@@ -184,12 +190,12 @@ class AntiAFK(QObject):
             self.set_window_transparency(handle, 0)
 
     def cancel_activity_settings(self, handle=None, anyway=False):
+        if self.transparent_window or anyway:
+            self.reset_window_transparency(handle)
+
         if self.block_input or anyway:
             self.set_mouse_blocking(False)
             self.set_key_blocking(False)
-
-        if self.transparent_window or anyway:
-            self.reset_window_transparency(handle)
 
     def show_window(self, handle, initial_state):
         self.apply_activity_settings(handle)
@@ -200,12 +206,14 @@ class AntiAFK(QObject):
             self.set_window_pos(handle, win32con.HWND_TOPMOST) #Set window on top
             self.set_window_pos(handle, win32con.HWND_NOTOPMOST) #but not overlap all other windows
 
+        # If the window display fails, try again after 30 seconds
         def cancel():
             self.hide_window(handle, initial_state)
             self.cancel_activity_settings(handle)
             self.start_timer(30)
 
-        if initial_state == 1: #if there was a maximized state then set foreground
+        # If there was a maximized state then set foreground
+        if initial_state == 1: 
             try:
                 win32gui.SetForegroundWindow(handle)
             except:
@@ -225,6 +233,10 @@ class AntiAFK(QObject):
         elif hide_maximized:
             self.set_window_pos(handle, win32con.HWND_BOTTOM)
             
+        # Set previous window foreground if the target window was maximized
+        # because in this case, focus is not returned to the window
+        # Disabled due to unpredictable situations that may occur
+
         # if initial_state == 1 and self.previous_hwnd:
         #     try:
         #         win32gui.SetForegroundWindow(self.previous_hwnd)
@@ -237,19 +249,23 @@ class AntiAFK(QObject):
         duration = random.uniform(0.3, 0.6)
         arrow_key = random.choice([Key.left, Key.right])
         wasd_key = random.choice(["w", "a", "s", "d"])
+        random_key = random.choice([Key.space, arrow_key, wasd_key])
 
-        if activity_type == 1: #Jump
-            self.keyboard_press(Key.space, duration)
-        elif activity_type == 2: #Camera movement
-            self.keyboard_press(arrow_key, duration)
-        elif activity_type == 3: #Jump + Walk
-            self.keyboard_press(Key.space, duration)
-            self.keyboard_press(wasd_key, duration)
-        elif activity_type == 4: #Walk
-            self.keyboard_press(wasd_key, duration)
-        elif activity_type == 5: #Random
-            random_key = random.choice([Key.space, arrow_key, wasd_key])
-            self.keyboard_press(random_key, duration)
+        activity_task = {
+            1: [partial(self.keyboard_press, Key.space, duration)],
+            2: [partial(self.keyboard_press, arrow_key, duration)],
+            3: [
+                partial(self.keyboard_press, Key.space, duration),
+                partial(self.keyboard_press, wasd_key, duration)
+            ],
+            4: [partial(self.keyboard_press, wasd_key, duration)],
+            5: [partial(self.keyboard_press, random_key, duration)]
+        }
+
+        task = activity_task[activity_type]
+
+        for command in task:
+            command()
 
     def set_window_transparency(self, handle, bAlpha):
         try:
@@ -450,7 +466,7 @@ class Controller(QObject):
         if self.anti_afk_thread and self.anti_afk_thread.isRunning():
             self.anti_afk.stop_timer()
             self.anti_afk.cancel_activity_settings(anyway=True)
-            self.anti_afk.set_all_windows_notopmost()
+            #self.anti_afk.set_all_windows_notopmost()
             self.anti_afk_thread.quit()
             self.anti_afk_thread.wait()
             #self.anti_afk.reset_label()
@@ -713,7 +729,7 @@ class MainWindow(QWidget):
             if pos:
                 self.move(QPoint(*pos))
 
-        self.on_maximized_windows_state_changed()
+        self.on_maximized_windows_state_changed() #update checkbox
 
     def save_settings(self):
         point = window.pos()
