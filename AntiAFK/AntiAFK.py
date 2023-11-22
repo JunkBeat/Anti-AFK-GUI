@@ -173,7 +173,7 @@ class AntiAFK(QObject):
         else:
             if hasattr(self, "mouse_listener") and self.mouse_listener.is_alive():
                 self.mouse_listener.stop()
-                self.mouse_listener.deleteLater()
+                del self.mouse_listener
 
     def apply_activity_settings(self, handle):
         if self.block_input:
