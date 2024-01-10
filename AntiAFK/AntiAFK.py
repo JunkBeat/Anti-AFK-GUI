@@ -27,7 +27,7 @@ def _set_CollapsibleBox(self, val):
 def _event_CollapsibleBox(self):
     return self.stateChanged
 
-VERSION = 1.0
+VERSION = 1.0.1
 
 HOOKS = {
     CollapsibleBox: (_get_CollapsibleBox, _set_CollapsibleBox, _event_CollapsibleBox)
