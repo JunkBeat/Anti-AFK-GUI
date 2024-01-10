@@ -8,7 +8,7 @@ class EditableItemWidget(QWidget):
         super().__init__()
         self.list_widget = list_widget
         self.line_edit = QLineEdit(text)
-        self.line_edit.setFont(QFont('Arial', 7))
+        self.line_edit.setFont(QFont('Arial', 8))
         
         self.remove_button = QPushButton("Remove")
         self.remove_button.setFocusPolicy(Qt.NoFocus)

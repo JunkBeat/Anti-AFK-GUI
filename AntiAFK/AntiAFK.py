@@ -8,7 +8,7 @@ import subprocess
 import pywintypes
 import keyboard
 from pynput.keyboard import Key, Controller as KeybController
-from pynput.mouse import Listener as MouseListener
+from pynput.mouse import Listener as MouseListener, Button, Controller as MouseController
 from PyQt5.QtWidgets import QTextEdit, QSpacerItem, QSizePolicy, QGridLayout, QLineEdit, QMessageBox, QComboBox, QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDesktopWidget, QGroupBox, QCheckBox, QSpinBox
 from PyQt5.QtGui import QIcon, QFont
 from PyQt5.QtCore import QPoint, QTimer, QObject, Qt, QCoreApplication, pyqtSignal, QThread, pyqtSlot
@@ -27,6 +27,8 @@ def _set_CollapsibleBox(self, val):
 def _event_CollapsibleBox(self):
     return self.stateChanged
 
+VERSION = 1.0
+
 HOOKS = {
     CollapsibleBox: (_get_CollapsibleBox, _set_CollapsibleBox, _event_CollapsibleBox)
 }
@@ -43,6 +45,7 @@ class AntiAFK(QObject):
         self.hwnds = []
         self.notopmost = False
         self.keyboard_controller = KeybController()
+        self.mouse_controller = MouseController()
         self.notification_shown = False
 
         self.timer = Timer()
@@ -101,21 +104,21 @@ class AntiAFK(QObject):
         if any(self.timer.receivers(signal) > 0 for signal in signals):
             self.timer.disconnect()
 
-    def perform_activity(self, handles):
+    def perform_activity(self, hwnds):
         window = win32gui.GetForegroundWindow()
         # Assign a value if the focus is not on the Anti-AFK program
-        self.previous_hwnd = window if window != self.winid else None
+        #self.previous_hwnd = window if window != self.winid else None
 
-        for handle in handles:
+        for hwnd in hwnds:
             activity_delay = self.config.get("activity_delay")
             activity_type = self.config.get("activity_type")
-            window_state = win32gui.GetWindowPlacement(handle)[1]
+            window_state = win32gui.GetWindowPlacement(hwnd)[1]
 
             def activity():
                 self.keypressing(activity_type)
-                self.hide_window(handle, window_state)
+                self.hide_window(hwnd, window_state)
 
-            response = self.show_window(handle, window_state)
+            response = self.show_window(hwnd, window_state)
             if response is not False:
                 self.time_sleep(activity_delay, on_finished=activity)
                 
@@ -139,20 +142,20 @@ class AntiAFK(QObject):
             QThread.msleep(5) #preventing a lot of CPU usage
 
     def collect_hwnds(self, names):
-        handles = []
+        hwnds = []
         maximized_allowed = self.config.get("maximized_windows")
 
-        def callback(handle, _):
-            if handle:
-                window_name = win32gui.GetWindowText(handle)
-                window_placement = win32gui.GetWindowPlacement(handle)[1]
+        def callback(hwnd, _):
+            if hwnd:
+                window_name = win32gui.GetWindowText(hwnd)
+                window_placement = win32gui.GetWindowPlacement(hwnd)[1]
 
                 if window_name in names and (window_placement == 2 or maximized_allowed):
-                    handles.append(handle)
+                    hwnds.append(hwnd)
 
         win32gui.EnumWindows(callback, None)
-        print('Handles: ', handles)
-        return handles
+        print('Handles: ', hwnds)
+        return hwnds
 
     def set_key_blocking(self, block):
         key_codes = [i for i in range(1, 150) if i not in self.allowed_key_codes]
@@ -165,15 +168,16 @@ class AntiAFK(QObject):
             except:
                 pass
 
-    def reset_window_transparency(self, handle=None):
-        if handle:
-            self.set_window_transparency(handle, 255)
+    def reset_window_transparency(self, hwnd=None):
+        if hwnd:
+            self.set_window_transparency(hwnd, 255)
         elif self.hwnds:
-            for handle in self.hwnds:
-                self.set_window_transparency(handle, 255)
+            for hwnd in self.hwnds:
+                self.set_window_transparency(hwnd, 255)
 
     def set_mouse_blocking(self, block):
         if block:
+            self.mouse_controller.release(Button.left)
             self.mouse_listener = MouseListener(suppress=True)
             self.mouse_listener.start()
         else:
@@ -181,69 +185,59 @@ class AntiAFK(QObject):
                 self.mouse_listener.stop()
                 del self.mouse_listener
 
-    def apply_activity_settings(self, handle):
+    def apply_activity_settings(self, hwnd):
         if self.block_input:
             self.set_mouse_blocking(True)
             self.set_key_blocking(True)
         
         if self.transparent_window:
-            self.set_window_transparency(handle, 0)
+            self.set_window_transparency(hwnd, 0)
 
-    def cancel_activity_settings(self, handle=None, anyway=False):
+    def cancel_activity_settings(self, hwnd=None, anyway=False):
         if self.transparent_window or anyway:
-            self.reset_window_transparency(handle)
+            self.reset_window_transparency(hwnd)
 
         if self.block_input or anyway:
             self.set_mouse_blocking(False)
             self.set_key_blocking(False)
 
-    def show_window(self, handle, initial_state):
-        self.apply_activity_settings(handle)
+    def show_window(self, hwnd, initial_state):
+        self.active_window = win32gui.GetForegroundWindow()
+        self.apply_activity_settings(hwnd)
+
+        # If the window display fails, try again after 15 seconds
+        def cancel():
+            self.hide_window(hwnd, initial_state)
+            self.cancel_activity_settings(hwnd)
+            self.start_timer(15)
 
         if self.notopmost: 
-            self.set_window_pos(handle, win32con.HWND_NOTOPMOST)
-        else:
-            self.set_window_pos(handle, win32con.HWND_TOPMOST) #Set window on top
-            self.set_window_pos(handle, win32con.HWND_NOTOPMOST) #but not overlap all other windows
+            self.set_window_pos(hwnd, win32con.HWND_NOTOPMOST)
 
-        # If the window display fails, try again after 30 seconds
-        def cancel():
-            self.hide_window(handle, initial_state)
-            self.cancel_activity_settings(handle)
-            self.start_timer(30)
+        # Restore the window if it was minimized
+        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
 
-        # If there was a maximized state then set foreground
-        if initial_state == 1: 
-            try:
-                win32gui.SetForegroundWindow(handle)
-            except:
-                cancel()
-                return False
-        else:
-            win32gui.ShowWindow(handle, win32con.SW_NORMAL)
-            if win32gui.GetForegroundWindow() != handle:
-                cancel()
-                return False
+        try:
+            win32gui.SetForegroundWindow(hwnd)
+        except Exception as e:
+            print(f"Unable to set foreground: {e}")
+            cancel()
+            return False
 
-    def hide_window(self, handle, initial_state):
+        self.target_wnd_order = win32gui.GetWindow(hwnd, win32con.GW_HWNDNEXT)
+        self.antiafk_wnd_order = win32gui.GetWindow(self.winid, win32con.GW_HWNDNEXT)
+
+    def hide_window(self, hwnd, initial_state):
         hide_maximized = self.config.get("hide_maximized_windows")
 
         if initial_state == 2: #if there was a minimized state then minimize
-            win32gui.ShowWindow(handle, win32con.SW_MINIMIZE)
+            win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
+            self.set_window_pos(self.winid, self.antiafk_wnd_order)
         elif hide_maximized:
-            self.set_window_pos(handle, win32con.HWND_BOTTOM)
-            
-        # Set previous window foreground if the target window was maximized
-        # because in this case, focus is not returned to the window
-        # Disabled due to unpredictable situations that may occur
-
-        # if initial_state == 1 and self.previous_hwnd:
-        #     try:
-        #         win32gui.SetForegroundWindow(self.previous_hwnd)
-        #     except:
-        #         pass
-
-        self.cancel_activity_settings(handle)
+            self.set_window_pos(hwnd, self.target_wnd_order)
+        
+        win32gui.SetForegroundWindow(self.active_window)
+        self.cancel_activity_settings(hwnd)
 
     def keypressing(self, activity_type):
         duration = random.uniform(0.3, 0.6)
@@ -267,17 +261,17 @@ class AntiAFK(QObject):
         for command in task:
             command()
 
-    def set_window_transparency(self, handle, bAlpha):
+    def set_window_transparency(self, hwnd, b_alpha):
         try:
-            style = win32gui.GetWindowLong(handle, win32con.GWL_EXSTYLE)
-            win32gui.SetWindowLong(handle, win32con.GWL_EXSTYLE, style | win32con.WS_EX_LAYERED)
-            win32gui.SetLayeredWindowAttributes(handle, win32api.RGB(0,0,0), bAlpha, win32con.LWA_ALPHA)
+            style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+            win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, style | win32con.WS_EX_LAYERED)
+            win32gui.SetLayeredWindowAttributes(hwnd, win32api.RGB(0,0,0), b_alpha, win32con.LWA_ALPHA)
         except Exception as e:
             print("Can't set window transparency: ", e)
 
-    def set_window_pos(self, handle, flag):
+    def set_window_pos(self, hwnd, hwnd_insert_after):
         try:
-            win32gui.SetWindowPos(handle, flag, 0, 0, 0, 0, win32con.SWP_NOMOVE | win32con.SWP_NOSIZE)
+            win32gui.SetWindowPos(hwnd, hwnd_insert_after, 0, 0, 0, 0, win32con.SWP_NOMOVE | win32con.SWP_NOSIZE)
         except pywintypes.error as e:
             #Access Denied Error
             if e.args[0] == 5:
@@ -294,8 +288,8 @@ class AntiAFK(QObject):
                 raise
 
     def set_all_windows_notopmost(self):
-        for handle in self.hwnds:
-            self.set_window_pos(handle, win32con.HWND_NOTOPMOST)
+        for hwnd in self.hwnds:
+            self.set_window_pos(hwnd, win32con.HWND_NOTOPMOST)
 
     def keyboard_press(self, key, duration):
         self.keyboard_controller.press(key)
@@ -494,7 +488,7 @@ class MainWindow(QWidget):
         }
 
         # Initialize the GUI
-        self.setWindowTitle("Anti-AFK")
+        self.setWindowTitle(f"Anti-AFK v.{VERSION}")
         self.setWindowIcon(QIcon(ICON_PATH))
         self.init_ui()
         self.centering()
@@ -511,7 +505,6 @@ class MainWindow(QWidget):
         self.open_screensaver_button.clicked.connect(lambda: self.screensaver.showFullScreen())
         self.open_screensaver_button.clicked.connect(lambda: self.set_notopmost_positioning(True))
         self.screensaver.closed.connect(lambda: self.set_notopmost_positioning(False))
-        self.maximized_windows_checkbox.stateChanged.connect(self.on_maximized_windows_state_changed)
 
     def init_ui(self):
         self.timer_label = QLabel("Stopped")
@@ -550,9 +543,8 @@ class MainWindow(QWidget):
         self.activity_delay_spinbox.setValue(2)
 
         self.notification_checkbox = QCheckBox("Notification of windows opening")
-        self.maximized_windows_checkbox = QCheckBox("Maximized windows")
-        self.hide_maximized_checkbox = QCheckBox("Hide")
-        self.hide_maximized_checkbox.setEnabled(False)
+        self.maximized_windows_checkbox = QCheckBox("Detect maximized windows")
+        self.hide_maximized_checkbox = QCheckBox("Hide them")
 
         self.open_screensaver_button = QPushButton("Open screensaver [Night farm]")
 
@@ -565,7 +557,7 @@ class MainWindow(QWidget):
         #---Kill Options-----------------
         self.kill_timer_label = QLabel("Stopped")
         self.kill_timer_label.setAlignment(Qt.AlignCenter)
-        self.kill_timer_label.setFont(QFont('Arial', 14))
+        self.kill_timer_label.setFont(QFont('Arial', 16))
         self.kill_timer_label.setStyleSheet("color: red")
 
         self.kill_process_names_textbox = QLineEdit(
@@ -646,8 +638,8 @@ class MainWindow(QWidget):
         grid_layout.addWidget(QLabel("sec"), 3, 2)
 
         grid_layout.addWidget(self.notification_checkbox, 4, 0, 1, 4)
-        grid_layout.addWidget(self.maximized_windows_checkbox, 5, 0, 1, 2)
-        grid_layout.addWidget(self.hide_maximized_checkbox, 5, 2, 1, 4)
+        grid_layout.addWidget(self.maximized_windows_checkbox, 5, 0, 1, 3)
+        grid_layout.addWidget(self.hide_maximized_checkbox, 5, 3, 1, 4)
 
 
         grid_during_activity = QGridLayout()
@@ -729,8 +721,6 @@ class MainWindow(QWidget):
             if pos:
                 self.move(QPoint(*pos))
 
-        self.on_maximized_windows_state_changed() #update checkbox
-
     def save_settings(self):
         point = window.pos()
         self.config.set("position", [point.x(), point.y()])
@@ -802,13 +792,6 @@ class MainWindow(QWidget):
         #Quit after window closes
         self.save_settings()
         QCoreApplication.quit()
-
-    @pyqtSlot()
-    def on_maximized_windows_state_changed(self):
-        if self.maximized_windows_checkbox.isChecked():
-            self.hide_maximized_checkbox.setEnabled(True)
-        else:
-            self.hide_maximized_checkbox.setEnabled(False)
 
     @pyqtSlot()
     def start_kill_timer(self):
