@@ -236,7 +236,11 @@ class AntiAFK(QObject):
         elif hide_maximized:
             self.set_window_pos(hwnd, self.target_wnd_order)
         
-        win32gui.SetForegroundWindow(self.active_window)
+        try:
+            win32gui.SetForegroundWindow(self.active_window)
+        except:
+            pass
+
         self.cancel_activity_settings(hwnd)
 
     def keypressing(self, activity_type):
