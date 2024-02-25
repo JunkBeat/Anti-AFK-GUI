@@ -7,7 +7,7 @@ import os
 import subprocess
 import pywintypes
 import keyboard
-from pynput.keyboard import Key, Controller as KeybController
+from pynput.keyboard import Key, KeyCode, Controller as KeybController
 from pynput.mouse import Listener as MouseListener, Button, Controller as MouseController
 from PyQt5.QtWidgets import QTextEdit, QSpacerItem, QSizePolicy, QGridLayout, QLineEdit, QMessageBox, QComboBox, QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDesktopWidget, QGroupBox, QCheckBox, QSpinBox
 from PyQt5.QtGui import QIcon, QFont
@@ -27,7 +27,7 @@ def _set_CollapsibleBox(self, val):
 def _event_CollapsibleBox(self):
     return self.stateChanged
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 
 HOOKS = {
     CollapsibleBox: (_get_CollapsibleBox, _set_CollapsibleBox, _event_CollapsibleBox)
@@ -44,17 +44,20 @@ class AntiAFK(QObject):
         self.winid = winid
         self.hwnds = []
         self.notopmost = False
+        self.forced_stop = False
         self.keyboard_controller = KeybController()
         self.mouse_controller = MouseController()
         self.notification_shown = False
+
+        self.singleshot_timer = SingleshotTimer()
 
         self.timer = Timer()
         self.timer.timeout.connect(self.handle_timeout)
         self.timer.finished.connect(self.main)
 
-        self.init_variables()
+        self.init_vars()
 
-    def init_variables(self):
+    def init_vars(self):
         names = self.config.get("window_text")
         self.window_names = [name.strip() for name in names.split(",")]
 
@@ -68,10 +71,10 @@ class AntiAFK(QObject):
         self.block_input = self.config.get("block_input")
         self.transparent_window = self.config.get("transparent_window")
 
-    @pyqtSlot(int)
-    def handle_timeout(self, seconds):
-        self.update_label(seconds)
-        if not self.notification_shown and seconds <= 4:
+    @pyqtSlot()
+    def handle_timeout(self):
+        self.update_label()
+        if not self.notification_shown and self.timer.remaining_seconds <= 4:
             self.show_notification(
                 "The windows will open in a few seconds\n"
                 "Don't click or press keys"
@@ -94,9 +97,11 @@ class AntiAFK(QObject):
         self.timer.start(time_sec)
 
     def stop_timer(self):
-        self.timer.stop()
-        self.disconnect_timer()
-        if hasattr(self, "singleshot_timer"):
+        self.forced_stop = True
+        if self.timer.is_active():
+            self.timer.stop()
+            self.disconnect_timer()
+        if self.singleshot_timer.is_active():
             self.singleshot_timer.stop()
         
     def disconnect_timer(self):
@@ -105,22 +110,19 @@ class AntiAFK(QObject):
             self.timer.disconnect()
 
     def perform_activity(self, hwnds):
-        window = win32gui.GetForegroundWindow()
-        # Assign a value if the focus is not on the Anti-AFK program
-        #self.previous_hwnd = window if window != self.winid else None
+        def activity():
+            self.keypressing(activity_type)
+            self.hide_window(hwnd, window_state)
 
         for hwnd in hwnds:
             activity_delay = self.config.get("activity_delay")
             activity_type = self.config.get("activity_type")
-            window_state = win32gui.GetWindowPlacement(hwnd)[1]
 
-            def activity():
-                self.keypressing(activity_type)
-                self.hide_window(hwnd, window_state)
-
-            response = self.show_window(hwnd, window_state)
-            if response is not False:
-                self.time_sleep(activity_delay, on_finished=activity)
+            if win32gui.IsWindow(hwnd):
+                window_state = win32gui.GetWindowPlacement(hwnd)[1]
+                response = self.show_window(hwnd, window_state)
+                if response is not False:
+                    self.time_sleep(activity_delay, on_finished=activity)
                 
         self.start_timer()
 
@@ -131,15 +133,14 @@ class AntiAFK(QObject):
         and it will wait for the timer to complete before continuing
         """
         delay = round(delay_sec * 1000)
-        self.singleshot_timer = SingleshotTimer()
-
-        if on_finished:
-            self.singleshot_timer.finished.connect(on_finished)
         self.singleshot_timer.start(delay)
         
         while self.singleshot_timer.is_active():
             QCoreApplication.processEvents()
             QThread.msleep(5) #preventing a lot of CPU usage
+
+        if on_finished and not self.forced_stop:
+            on_finished()
 
     def collect_hwnds(self, names):
         hwnds = []
@@ -162,9 +163,9 @@ class AntiAFK(QObject):
         for key in key_codes:
             try:
                 if block:
-                    keyboard.block_key(i)
+                    keyboard.block_key(key)
                 else:
-                    keyboard.unblock_key(i)
+                    keyboard.unblock_key(key)
             except:
                 pass
 
@@ -202,7 +203,9 @@ class AntiAFK(QObject):
             self.set_key_blocking(False)
 
     def show_window(self, hwnd, initial_state):
-        self.active_window = win32gui.GetForegroundWindow()
+        window = win32gui.GetForegroundWindow()
+        self.active_window_is_antiafk = window == self.winid
+        self.active_window = window
         self.apply_activity_settings(hwnd)
 
         # If the window display fails, try again after 15 seconds
@@ -215,7 +218,10 @@ class AntiAFK(QObject):
             self.set_window_pos(hwnd, win32con.HWND_NOTOPMOST)
 
         # Restore the window if it was minimized
-        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+        if win32gui.IsIconic(hwnd) and not win32gui.GetForegroundWindow() == hwnd:
+            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+        #else:
+        #    win32gui.ShowWindow(hwnd, win32con.SW_NORMAL)
 
         try:
             win32gui.SetForegroundWindow(hwnd)
@@ -232,28 +238,33 @@ class AntiAFK(QObject):
 
         if initial_state == 2: #if there was a minimized state then minimize
             win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
-            self.set_window_pos(self.winid, self.antiafk_wnd_order)
+            if not self.active_window_is_antiafk:
+                self.set_window_pos(self.winid, self.antiafk_wnd_order)
         elif hide_maximized:
             self.set_window_pos(hwnd, self.target_wnd_order)
         
         try:
             win32gui.SetForegroundWindow(self.active_window)
         except:
-            pass
+            pass 
 
         self.cancel_activity_settings(hwnd)
 
     def keypressing(self, activity_type):
-        duration = random.uniform(0.3, 0.6)
+        duration = round(random.uniform(0.2, 0.6), 2)
+        space_key = Key.space
         arrow_key = random.choice([Key.left, Key.right])
-        wasd_key = random.choice(["w", "a", "s", "d"])
-        random_key = random.choice([Key.space, arrow_key, wasd_key])
+        wasd_key = random.choice([KeyCode(vk=87), KeyCode(vk=65), KeyCode(vk=83), KeyCode(vk=68)])
+        # space_key = "space"
+        # arrow_key = random.choice(["left", "right"])
+        # wasd_key = random.choice(["w", "a", "s", "d"])
 
+        random_key = random.choice([space_key, arrow_key, wasd_key])
         activity_task = {
-            1: [partial(self.keyboard_press, Key.space, duration)],
+            1: [partial(self.keyboard_press, space_key, duration)],
             2: [partial(self.keyboard_press, arrow_key, duration)],
             3: [
-                partial(self.keyboard_press, Key.space, duration),
+                partial(self.keyboard_press, space_key, duration),
                 partial(self.keyboard_press, wasd_key, duration)
             ],
             4: [partial(self.keyboard_press, wasd_key, duration)],
@@ -296,6 +307,7 @@ class AntiAFK(QObject):
             self.set_window_pos(hwnd, win32con.HWND_NOTOPMOST)
 
     def keyboard_press(self, key, duration):
+        print(f"Pressing: {key}, {duration}")
         self.keyboard_controller.press(key)
         self.time_sleep(duration)
         self.keyboard_controller.release(key)
@@ -309,9 +321,9 @@ class AntiAFK(QObject):
                          icon=ICON_PATH)
             toast.show()
 
-    def update_label(self, seconds):
-        formatted_time = self.timer.format_seconds(seconds)
-        self.update_timer_label.emit(f"Timer: {formatted_time}")
+    def update_label(self):
+        formatted_time = self.timer.formatted_time
+        self.set_label(f"Timer: {formatted_time}")
 
     def set_label(self, text):
         self.update_timer_label.emit(text)
@@ -327,9 +339,9 @@ class ProcessKiller(QObject):
         self.config = config
         self.timer = Timer()
 
-        self.init_variables()
+        self.init_vars()
 
-    def init_variables(self):
+    def init_vars(self):
         hours = self.config.get("kill_delay_hours")
         minutes = self.config.get("kill_delay_minutes")
         self.kill_delay = hours * 3600 + minutes * 60
@@ -337,14 +349,9 @@ class ProcessKiller(QObject):
         names = self.config.get("process_names")
         self.process_names = [name.strip() for name in names.split(",")]
 
-    @pyqtSlot(int, str)
-    def update_label(self, seconds_left, description):
-        formatted_time = self.timer.format_seconds(seconds_left)
-        self.update_timer_label.emit(f"{description}: {formatted_time}")
-
     def run_timer(self, sec, description, on_finished):
         self.stop_timer()
-        self.timer.timeout.connect(lambda remaining_time: self.update_label(remaining_time, description))
+        self.timer.timeout.connect(lambda: self.update_label(description))
         self.timer.finished.connect(on_finished)
         self.timer.start(sec)
     
@@ -357,8 +364,14 @@ class ProcessKiller(QObject):
         self.timer.stop()
         self.disconnect_timer()
 
+    def set_label(self, text):
+        self.update_timer_label.emit(text)
+
+    def update_label(self, description="Timer"):
+        self.set_label(f"{description}: {self.timer.formatted_time}")
+
     def reset_label(self):
-        self.update_timer_label.emit("")
+        self.set_label("")
 
     def run_command(self, command: str, args: list):
         try:
@@ -467,7 +480,6 @@ class Controller(QObject):
             #self.anti_afk.set_all_windows_notopmost()
             self.anti_afk_thread.quit()
             self.anti_afk_thread.wait()
-            #self.anti_afk.reset_label()
             self.anti_afk.deleteLater()
 
     def on_anti_afk_destroyed(self):
@@ -485,8 +497,8 @@ class MainWindow(QWidget):
 
         self.activity_type_map = {
             'Jump': 1,
-            'Camera movement': 2,
-            'Jump + Walk': 3,
+            'Camera rotation': 2,
+            'Jump and Walk': 3,
             'Walk': 4,
             'Random': 5
         }
@@ -553,7 +565,7 @@ class MainWindow(QWidget):
         self.open_screensaver_button = QPushButton("Open screensaver [Night farm]")
 
         self.block_input_checkbox = QCheckBox("Block input (mouse, keyboard)")
-        self.transparent_window_checkbox = QCheckBox("Make target window transparent")
+        self.transparent_window_checkbox = QCheckBox("Make target window invisible")
 
         margin_spacer = QSpacerItem(10, 10, QSizePolicy.Fixed, QSizePolicy.Fixed)
         small_margin_spacer = QSpacerItem(5, 5, QSizePolicy.Fixed, QSizePolicy.Fixed)
@@ -561,7 +573,7 @@ class MainWindow(QWidget):
         #---Kill Options-----------------
         self.kill_timer_label = QLabel("Stopped")
         self.kill_timer_label.setAlignment(Qt.AlignCenter)
-        self.kill_timer_label.setFont(QFont('Arial', 16))
+        self.kill_timer_label.setFont(QFont('Arial', 18))
         self.kill_timer_label.setStyleSheet("color: red")
 
         self.kill_process_names_textbox = QLineEdit(

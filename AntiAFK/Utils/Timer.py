@@ -1,7 +1,7 @@
 from PyQt5.QtCore import QObject, pyqtSignal, QTimer, QMetaObject, Qt, pyqtSlot, QTime
 
 class Timer(QObject):
-    timeout = pyqtSignal(int)
+    timeout = pyqtSignal()
     finished = pyqtSignal()
 
     def __init__(self):
@@ -11,11 +11,14 @@ class Timer(QObject):
         self.timer = QTimer()
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.handle_timeout)
+    
+    def is_active(self):
+        return self.timer_started
         
     def start(self, seconds):
         if not self.timer_started:
-            self.timeout.emit(seconds) #display first second
             self.remaining_seconds = seconds
+            self.timeout.emit() #display first second
             QMetaObject.invokeMethod(self.timer, "start", Qt.QueuedConnection) 
             self.timer_started = True
 
@@ -31,11 +34,12 @@ class Timer(QObject):
             self.stop()
             self.finished.emit()
         else:
-            self.timeout.emit(self.remaining_seconds)
-
-    def format_seconds(self, seconds):
+            self.timeout.emit()
+    
+    @property
+    def formatted_time(self):
         time = QTime(0, 0)
-        time = time.addSecs(seconds)
+        time = time.addSecs(self.remaining_seconds)
 
         if time.hour() > 0:
             return time.toString("hh:mm:ss")
@@ -57,7 +61,6 @@ class SingleshotTimer(QObject):
     def on_timeout(self):
         self.stop()
         self.finished.emit()
-        self.deleteLater()
 
     def start(self, delay_ms):
         self.one_timed_timer.setInterval(delay_ms)
