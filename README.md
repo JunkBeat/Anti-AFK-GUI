@@ -3,6 +3,15 @@
 
 Anti-AFK GUI is a program designed to bypass kicks from the server due to inactivity. It is universal and contains various settings. And most importantly, it works in the background! You don't have to keep your game open all the time.
 
+# Important
+Some antivirus programs (including Microsoft Defender) flag the program as a virus. This is a false positive. 
+In any case, you can run the script yourself:
+1. Install the latest version of Python (3.x)
+2. Download the source code
+3. Install the required libraries from requirements.txt
+
+`pip install -r requirements.txt`
+
 # How to use
 
 1. Specify the `Window text` field and configure other settings.
@@ -12,7 +21,7 @@ Anti-AFK GUI is a program designed to bypass kicks from the server due to inacti
 To reset AFK timers in maximized windows as well, activate the `Maximized windows` checkbox.
 
 > [!TIP]
-> If the target game allows you to run multiple instances, then you can simultaneously play on the main account and grind in minimized windows using alts, resetting their AFK timers.
+> If the target game allows you to run multiple instances, you can simultaneously play on the main account and grind in minimized windows using alts, resetting their AFK timers.
 
 
 # How it works
@@ -41,14 +50,14 @@ To reset AFK timers in maximized windows as well, activate the `Maximized window
 * `Window text` and `Process names` can be entered separately by commas in the field or in the list entry window using the `...` button.
 * During activity, keys will be randomly held for a duration ranging from 300 to 600 ms.
 * After opening the `Screensaver`, it will automatically close upon mouse movement.
-* If you have activated `Turn off the PC` in the `Delayed Kill Options`, the shutdown will occur only after 5 minutes following the termination of the specified processes, allowing you time to cancel it.
+* If you’ve set the `Turn off the PC` option in the `Delayed Kill Options`, your computer will shut down 5 minutes after certain processes end. This gives you time to cancel the shutdown if needed.
 
 > [!WARNING]
 > `Turn off the PC` function forcefully terminates the computer. All unsaved data will be lost.
 
 #### Possible problems:
 * If the activity triggers before the window is fully loaded, try increasing the `Activity delay`.
-* In the case of unexpected exceptions, input block is automatically disabled (if it was enabled in the settings). However, if for some reason this doesn't work, use the Control-Alt-Delete key combination to access the task manager and terminate the program from there.
+* In the case of unexpected exceptions, input block is automatically disabled. However, if for some reason this doesn't work, use the Control-Alt-Delete key combination to access the task manager and terminate the program from there.
 
 #  Executable download link
 :sparkles: [Latest Release](https://github.com/JunkBeat/Anti-AFK-GUI/releases/latest/) 
