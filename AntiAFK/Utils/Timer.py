@@ -53,12 +53,13 @@ class SingleshotTimer(QObject):
         super().__init__()
         self.timer_started = False
         self.one_timed_timer = QTimer()
-        self.one_timed_timer.timeout.connect(self.on_timeout)
+        self.one_timed_timer.timeout.connect(self.handle_timeout)
 
     def is_active(self):
         return self.timer_started
 
-    def on_timeout(self):
+    @pyqtSlot()
+    def handle_timeout(self):
         self.stop()
         self.finished.emit()
 

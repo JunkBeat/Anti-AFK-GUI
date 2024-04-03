@@ -290,12 +290,13 @@ class AntiAFK(QObject):
         except pywintypes.error as e:
             #Access Denied Error
             if e.args[0] == 5:
-                self.stop_timer()
-                self.show_error_message.emit(
-                    "It looks like your target window is running as administrator.\n"
-                    "You will need to restart Anti-AFK with elevated rights."
-                )
-                self.finished.emit()
+                pass
+                # self.stop_timer()
+                # self.show_error_message.emit(
+                #     "It looks like your target window is running as administrator.\n"
+                #     "You will need to restart Anti-AFK with elevated rights."
+                # )
+                # self.finished.emit()
             #Invalid window handle
             elif e.args[0] == 1400:
                 pass 
