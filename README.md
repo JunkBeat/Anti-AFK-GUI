@@ -1,6 +1,6 @@
 > [!IMPORTANT]
-> The program contains unfixed bugs, and keyboard presses periodically do not work. I advise you to use the following program to be AFK in Roblox:
-> https://github.com/Agzes/AntiAFK-RBX
+> This program is no longer being maintained. For the best AFK experience in Roblox, please switch to my new program:
+> https://github.com/JunkBeat/AntiAFK-Roblox
 
 # Anti-AFK GUI
 ![Anti-AFK logo](images/icon.png)
