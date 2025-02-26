@@ -1,3 +1,7 @@
+> [!WARNING]
+> This program is no longer being maintained. For the best AFK experience in Roblox, please switch to my new program:
+> https://github.com/JunkBeat/AntiAFK-Roblox
+
 # Anti-AFK GUI
 ![Anti-AFK logo](images/icon.png)
 
@@ -73,3 +77,4 @@ Remember, however, that each player is responsible for the actions on his accoun
 - [ ] Add the ability to create and edit activity scenarios (`Activity types`) in the graphical interface.
 
 > Made with ♥️ by JunkBeat
+<img src="https://visit-counter.vercel.app/counter.png?page=https%3A%2F%2Fgithub.com%2FJunkBeat%2FAnti-AFK-GUI&s=40&c=00ff00&bg=00000000&no=2&ff=electrolize&tb=&ta=" alt="visits">
